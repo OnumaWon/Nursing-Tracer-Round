@@ -1,0 +1,7 @@
+{
+  "name": "Nursing Tracer Pro",
+  "description": "Professional tool for recording and analyzing Nursing Tracer Round results with AI-powered insights and reporting.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
