@@ -49,7 +49,7 @@ import Dashboard from './components/Dashboard';
 import Assistant from './components/Assistant';
 import DepartmentTracking from './components/DepartmentTracking';
 import { TracerRound, ComplianceStatus, SectionData } from './types';
-import { SECTIONS_CONFIG, UI_LABELS } from './constants';
+import { SECTIONS_CONFIG, UI_LABELS, DEPARTMENTS } from './constants';
 import { analyzeSingleRound, analyzeSection } from './services/geminiService';
 
 const SidebarLink = ({ to, icon: Icon, label, active }: { to: string, icon: any, label: string, active: boolean }) => (
@@ -538,13 +538,22 @@ const SettingsView = ({ rounds, onUpdateRounds, lang }: { rounds: TracerRound[],
         'Patient_Ag': 'patientAge',
         'Patient_Age': 'patientAge',
         'ประเด็นพัฒนา': 'developmentIssues',
-        'สิ่งที่ชมเชย': 'appreciations'
+        'สิ่งที่ชมเชย': 'appreciations',
+        'Department': 'department',
+        'Date': 'date',
+        'Month': 'month',
+        'Year': 'year',
+        'Comorbidity': 'comorbidity',
+        'Comodity': 'comorbidity',
+        'Specialty': 'specialty'
       };
 
       Object.keys(row).forEach(key => {
         const val = row[key];
-        const normalizedKey = mapping[key] || key;
-        const sectionNumMatch = key.match(/^(\d+)\./);
+        const cleanKey = key.trim();
+        const normalizedKey = mapping[cleanKey] || cleanKey;
+        
+        const sectionNumMatch = cleanKey.match(/^(\d+)\./);
         if (sectionNumMatch) {
           const sectionIdx = parseInt(sectionNumMatch[1]) - 1;
           const sectionConfig = SECTIONS_CONFIG[sectionIdx];
@@ -555,33 +564,80 @@ const SettingsView = ({ rounds, onUpdateRounds, lang }: { rounds: TracerRound[],
               entry.sections[sectionId] = { items: {}, finding: "" };
             }
 
-            if (key.includes('Finding')) {
+            if (cleanKey.includes('Finding')) {
               entry.sections[sectionId].finding = val;
             } else {
-              const itemIdMatch = key.match(/^(\d+\.\d+)/);
+              const itemIdMatch = cleanKey.match(/^(\d+\.\d+)/);
               if (itemIdMatch) {
                 const itemId = itemIdMatch[1];
                 let statusValue = val as string;
-                if (statusValue === 'Partially M') statusValue = ComplianceStatus.PARTIALLY_MET;
+                if (typeof statusValue === 'string') {
+                  if (statusValue.startsWith('Partially')) statusValue = ComplianceStatus.PARTIALLY_MET;
+                  else if (statusValue.startsWith('Not')) statusValue = ComplianceStatus.NOT_MET;
+                  else if (statusValue.startsWith('Met')) statusValue = ComplianceStatus.MET;
+                  else if (statusValue === 'N/A' || statusValue === 'NA') statusValue = ComplianceStatus.NA;
+                }
                 entry.sections[sectionId].items[itemId] = statusValue as ComplianceStatus;
               }
             }
           }
-        } else if (key.startsWith('section_')) {
-          const parts = key.split('_');
+        } else if (cleanKey.startsWith('section_')) {
+          const parts = cleanKey.split('_');
           const sectionId = parts[1];
           const field = parts[2];
           if (!entry.sections[sectionId]) entry.sections[sectionId] = { items: {}, finding: "" };
           if (field === 'finding') entry.sections[sectionId].finding = val;
           else entry.sections[sectionId].items[field] = val as ComplianceStatus;
         } else {
-          if (['year', 'patientAge', 'createdAt'].includes(normalizedKey)) {
-            entry[normalizedKey] = parseInt(val) || 0;
+          // Handle lowercase keys if they match directly
+          const lowerKey = normalizedKey.charAt(0).toLowerCase() + normalizedKey.slice(1);
+          if (['year', 'patientAge', 'createdAt'].includes(lowerKey)) {
+            entry[lowerKey] = parseInt(val) || 0;
           } else {
-            entry[normalizedKey] = val;
+            entry[lowerKey] = val;
           }
         }
       });
+
+      // Normalization and Inference
+      if (entry.department) {
+        // Try to normalize "3B" to "Ward 3B"
+        if (/^\d+[A-Z]$/.test(entry.department)) {
+           entry.department = `Ward ${entry.department}`;
+        }
+        
+        // Infer Department Type
+        const deptInfo = DEPARTMENTS.find(d => 
+          d.name.toLowerCase() === entry.department.toLowerCase() || 
+          d.name_th === entry.department
+        );
+        if (deptInfo) {
+          entry.depType = deptInfo.type;
+          entry.department = deptInfo.name; // Normalize name
+        } else {
+          // Default if not found
+          entry.depType = 'IPD'; 
+        }
+      }
+
+      if (entry.rnLevel && /^\d+$/.test(String(entry.rnLevel))) {
+        entry.rnLevel = `RN${entry.rnLevel}`;
+      }
+
+      if (entry.specialty) {
+        const specMap: Record<string, string> = {
+          'Neuro': 'Neurology',
+          'Ped': 'Pediatrics',
+          'Med': 'Internal Medicine',
+          'Surg': 'Surgery',
+          'Ortho': 'Orthopedics',
+          'OB-GYN': 'Obstetrics & Gynecology',
+          'CV': 'Cardiology'
+        };
+        if (specMap[entry.specialty]) {
+          entry.specialty = specMap[entry.specialty];
+        }
+      }
 
       SECTIONS_CONFIG.forEach(sec => {
         if (!entry.sections[sec.id]) {
@@ -610,14 +666,14 @@ const SettingsView = ({ rounds, onUpdateRounds, lang }: { rounds: TracerRound[],
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      const bstr = event.target?.result;
-      const wb = XLSX.read(bstr, { type: 'binary' });
+      const data = event.target?.result;
+      const wb = XLSX.read(data, { type: 'array' });
       const wsname = wb.SheetNames[0];
       const ws = wb.Sheets[wsname];
-      const data = XLSX.utils.sheet_to_json(ws);
-      processImportData(data);
+      const jsonData = XLSX.utils.sheet_to_json(ws);
+      processImportData(jsonData);
     };
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
     if (excelInputRef.current) excelInputRef.current.value = "";
   };
 
@@ -868,7 +924,14 @@ const HistoryView = ({ rounds, lang, onDelete }: { rounds: TracerRound[], lang: 
 };
 
 const AppContent = () => {
-  const [rounds, setRounds] = useState<TracerRound[]>([]);
+  const [rounds, setRounds] = useState<TracerRound[]>(() => {
+    const saved = localStorage.getItem('tracerRounds');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('tracerRounds', JSON.stringify(rounds));
+  }, [rounds]);
   const [lang, setLang] = useState<'en' | 'th'>('en');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const location = useLocation();

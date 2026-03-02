@@ -50,8 +50,23 @@ const TracerForm: React.FC<TracerFormProps> = ({ onSubmit, lang, initialData, is
   useEffect(() => {
     if (initialData) {
       setFormData(initialData);
+    } else if (!isEdit) {
+      const savedDraft = localStorage.getItem('tracerFormDraft');
+      if (savedDraft) {
+        try {
+          setFormData(JSON.parse(savedDraft));
+        } catch (e) {
+          console.error("Failed to load draft", e);
+        }
+      }
     }
-  }, [initialData]);
+  }, [initialData, isEdit]);
+
+  useEffect(() => {
+    if (!isEdit && !initialData) {
+      localStorage.setItem('tracerFormDraft', JSON.stringify(formData));
+    }
+  }, [formData, isEdit, initialData]);
 
   const handleBasicInfoChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -94,6 +109,9 @@ const TracerForm: React.FC<TracerFormProps> = ({ onSubmit, lang, initialData, is
       id: formData.id || crypto.randomUUID(),
       createdAt: formData.createdAt || Date.now()
     };
+    if (!isEdit) {
+      localStorage.removeItem('tracerFormDraft');
+    }
     onSubmit(finalData);
   };
 
