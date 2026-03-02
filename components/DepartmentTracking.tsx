@@ -14,7 +14,8 @@ import {
   TrendingUp, 
   TrendingDown,
   Clock,
-  Layout
+  Layout,
+  FileText
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -23,22 +24,55 @@ interface DepartmentTrackingProps {
   lang: 'en' | 'th';
 }
 
+const SECTION_COLORS = [
+  { bg: 'bg-blue-100', bodyBg: 'bg-blue-50/50', border: 'border-blue-200', text: 'text-blue-900', iconBg: 'bg-white', iconColor: 'text-blue-600', itemBorder: 'border-blue-100' },
+  { bg: 'bg-emerald-100', bodyBg: 'bg-emerald-50/50', border: 'border-emerald-200', text: 'text-emerald-900', iconBg: 'bg-white', iconColor: 'text-emerald-600', itemBorder: 'border-emerald-100' },
+  { bg: 'bg-amber-100', bodyBg: 'bg-amber-50/50', border: 'border-amber-200', text: 'text-amber-900', iconBg: 'bg-white', iconColor: 'text-amber-600', itemBorder: 'border-amber-100' },
+  { bg: 'bg-rose-100', bodyBg: 'bg-rose-50/50', border: 'border-rose-200', text: 'text-rose-900', iconBg: 'bg-white', iconColor: 'text-rose-600', itemBorder: 'border-rose-100' },
+  { bg: 'bg-violet-100', bodyBg: 'bg-violet-50/50', border: 'border-violet-200', text: 'text-violet-900', iconBg: 'bg-white', iconColor: 'text-violet-600', itemBorder: 'border-violet-100' },
+  { bg: 'bg-cyan-100', bodyBg: 'bg-cyan-50/50', border: 'border-cyan-200', text: 'text-cyan-900', iconBg: 'bg-white', iconColor: 'text-cyan-600', itemBorder: 'border-cyan-100' },
+  { bg: 'bg-slate-100', bodyBg: 'bg-slate-50/50', border: 'border-slate-200', text: 'text-slate-900', iconBg: 'bg-white', iconColor: 'text-slate-600', itemBorder: 'border-slate-100' },
+];
+
 const DepartmentTracking: React.FC<DepartmentTrackingProps> = ({ rounds, lang }) => {
-  const [selectedDept, setSelectedDept] = useState<string>(DEPARTMENTS[0].name);
+  const [selectedDept, setSelectedDept] = useState<string>('ALL');
 
   // Group and sort rounds for the selected department
   const deptRounds = useMemo(() => {
-    return rounds
-      .filter(r => r.department === selectedDept)
-      .sort((a, b) => {
-        // Sort by year, then month index, then date
-        const yearDiff = a.year - b.year;
-        if (yearDiff !== 0) return yearDiff;
-        const monthDiff = MONTHS.en.indexOf(a.month) - MONTHS.en.indexOf(b.month);
-        if (monthDiff !== 0) return monthDiff;
-        return a.date.localeCompare(b.date);
-      });
+    let filtered = rounds;
+    if (selectedDept !== 'ALL') {
+      filtered = rounds.filter(r => r.department === selectedDept);
+    }
+    return filtered.sort((a, b) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      return dateA - dateB; // Ascending for chart
+    });
   }, [rounds, selectedDept]);
+
+  const findingsData = useMemo(() => {
+    // Get rounds sorted by date descending for findings
+    const sortedRounds = [...deptRounds].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    
+    return SECTIONS_CONFIG.map(section => {
+      const findings = sortedRounds
+        .filter(r => r.sections[section.id as keyof TracerRound['sections']]?.finding)
+        .map(r => ({
+          id: r.id,
+          dept: r.department,
+          date: r.date,
+          text: r.sections[section.id as keyof TracerRound['sections']].finding,
+          depType: r.depType
+        }));
+      return {
+        sectionId: section.id,
+        title_en: section.title_en,
+        title_th: section.title_th,
+        icon: section.icon,
+        findings
+      };
+    });
+  }, [deptRounds]);
 
   const trackingData = useMemo(() => {
     return deptRounds.map((round, index) => {
@@ -97,6 +131,7 @@ const DepartmentTracking: React.FC<DepartmentTrackingProps> = ({ rounds, lang })
               onChange={(e) => setSelectedDept(e.target.value)}
               className="w-full text-sm border-slate-200 rounded-xl bg-slate-50 p-2.5 focus:ring-2 focus:ring-indigo-500 outline-none border font-semibold"
             >
+              <option value="ALL">{lang === 'en' ? 'All Departments' : 'ทุกแผนก (ภาพรวม)'}</option>
               {DEPARTMENTS.map(d => (
                 <option key={d.name} value={d.name}>{lang === 'en' ? d.name : d.name_th}</option>
               ))}
@@ -108,7 +143,9 @@ const DepartmentTracking: React.FC<DepartmentTrackingProps> = ({ rounds, lang })
           <div className="flex flex-col items-center justify-center py-20 border border-dashed border-slate-200 rounded-2xl">
             <History className="w-12 h-12 text-slate-300 mb-4" />
             <p className="text-slate-500 font-medium">
-              {lang === 'en' ? `No tracer rounds found for ${selectedDept}` : `ยังไม่มีข้อมูลการตรวจสำหรับ ${selectedDept}`}
+              {lang === 'en' 
+                ? `No tracer rounds found for ${selectedDept === 'ALL' ? 'any department' : selectedDept}` 
+                : `ยังไม่มีข้อมูลการตรวจสำหรับ ${selectedDept === 'ALL' ? 'ทุกแผนก' : selectedDept}`}
             </p>
           </div>
         ) : (
@@ -233,6 +270,60 @@ const DepartmentTracking: React.FC<DepartmentTrackingProps> = ({ rounds, lang })
           </div>
         )}
       </div>
+
+      {/* Findings Summary Section */}
+      {deptRounds.length > 0 && (
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+          <div className="flex items-center gap-3 mb-8">
+            <div className="p-2 bg-amber-50 text-amber-600 rounded-lg">
+              <FileText size={24} />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">{lang === 'en' ? 'Qualitative Findings Overview' : 'สรุปข้อมูลเชิงคุณภาพ (Findings)'}</h2>
+              <p className="text-sm text-slate-500">{lang === 'en' ? 'Consolidated comments and findings by topic' : 'รวบรวมข้อคิดเห็นและสิ่งที่ตรวจพบแยกตามหัวข้อ'}</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {findingsData.map((section, index) => {
+              const color = SECTION_COLORS[index % SECTION_COLORS.length];
+              return (
+                <div key={section.sectionId} className={`flex flex-col bg-white rounded-xl border ${color.border} shadow-sm overflow-hidden h-full hover:shadow-md transition-shadow`}>
+                  <div className={`p-4 ${color.bg} border-b ${color.border} flex items-center gap-3`}>
+                    <div className={`${color.iconColor} p-2 ${color.iconBg} rounded-lg shadow-sm`}>{section.icon}</div>
+                    <h3 className={`font-bold ${color.text} text-sm leading-tight`}>
+                      {lang === 'en' ? section.title_en : section.title_th}
+                    </h3>
+                  </div>
+                  <div className={`p-4 flex-1 overflow-y-auto max-h-[400px] custom-scrollbar space-y-3 ${color.bodyBg}`}>
+                    {section.findings.length === 0 ? (
+                      <div className="text-center py-8 text-slate-400 text-xs italic">
+                        {lang === 'en' ? 'No findings recorded.' : 'ไม่มีบันทึกสิ่งที่ตรวจพบ'}
+                      </div>
+                    ) : (
+                      section.findings.map((finding, idx) => (
+                        <div key={`${finding.id}-${idx}`} className={`bg-white p-3 rounded-xl border ${color.itemBorder} shadow-sm text-sm relative group hover:border-indigo-200 transition-colors`}>
+                          <div className="flex justify-between items-start mb-2">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              finding.depType === 'Critical' ? 'bg-red-50 text-red-600' :
+                              finding.depType === 'OPD' ? 'bg-green-50 text-green-600' :
+                              'bg-blue-50 text-blue-600'
+                            }`}>
+                              {finding.dept}
+                            </span>
+                            <span className="text-[10px] text-slate-400">{finding.date}</span>
+                          </div>
+                          <p className="text-slate-700 leading-relaxed text-xs">{finding.text}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

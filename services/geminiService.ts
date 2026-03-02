@@ -91,6 +91,19 @@ export const analyzeSection = async (sectionTitle: string, sectionData: any) => 
   return response.text;
 };
 
+export const translateText = async (text: string, targetLang: 'th' | 'en') => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const prompt = `Translate the following text to ${targetLang === 'th' ? 'Thai' : 'English'}. Maintain the professional tone and formatting.
+  Text: ${text}`;
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-flash-preview',
+    contents: prompt,
+  });
+
+  return response.text;
+};
+
 export const chatWithAssistant = async (history: { role: string; content: string }[], message: string) => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const chat = ai.chats.create({

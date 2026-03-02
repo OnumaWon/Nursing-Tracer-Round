@@ -3,7 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Cell,
-  Brush, Legend, LabelList
+  Brush, Legend, LabelList, AreaChart, Area, LineChart, Line
 } from 'recharts';
 import { TracerRound, ComplianceStatus } from '../types';
 import { SECTIONS_CONFIG, MONTHS } from '../constants';
@@ -17,6 +17,20 @@ interface DashboardProps {
 const CustomTooltip = ({ active, payload, label, lang }: any) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
+    
+    // Handle Trend Data (Mockup)
+    if (data.avg !== undefined && data.met === undefined) {
+      return (
+        <div className="bg-white p-3 rounded-xl shadow-xl border border-slate-100 animate-in fade-in zoom-in duration-200">
+          <p className="font-bold text-slate-900 mb-1">{label}</p>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-500 uppercase">{lang === 'en' ? 'Average:' : 'ค่าเฉลี่ย:'}</span>
+            <span className="text-lg font-bold text-indigo-600">{data.avg}%</span>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="bg-white p-4 rounded-xl shadow-2xl border border-slate-100 animate-in fade-in zoom-in duration-200">
         <p className="font-bold text-slate-900 mb-2 border-b pb-1">{label}</p>
@@ -81,15 +95,27 @@ const Dashboard: React.FC<DashboardProps> = ({ rounds, lang }) => {
       let partialItems = 0;
       let notMetItems = 0;
 
+      const itemBreakdown: Record<string, { id: string, met: number, partial: number, notMet: number, total: number, label_en: string, label_th: string }> = {};
+      section.items.forEach(item => {
+        itemBreakdown[item.id] = { id: item.id, met: 0, partial: 0, notMet: 0, total: 0, label_en: item.label_en, label_th: item.label_th };
+      });
+
       filteredRounds.forEach(round => {
         const sData = round.sections[section.id as keyof TracerRound['sections']];
         if (sData && sData.items) {
-          Object.values(sData.items).forEach(status => {
+          Object.entries(sData.items).forEach(([itemId, status]) => {
             if (status !== ComplianceStatus.NA) {
               totalItems++;
               if (status === ComplianceStatus.MET) metItems++;
               else if (status === ComplianceStatus.PARTIALLY_MET) partialItems++;
               else if (status === ComplianceStatus.NOT_MET) notMetItems++;
+
+              if (itemBreakdown[itemId]) {
+                itemBreakdown[itemId].total++;
+                if (status === ComplianceStatus.MET) itemBreakdown[itemId].met++;
+                else if (status === ComplianceStatus.PARTIALLY_MET) itemBreakdown[itemId].partial++;
+                else if (status === ComplianceStatus.NOT_MET) itemBreakdown[itemId].notMet++;
+              }
             }
           });
         }
@@ -98,12 +124,15 @@ const Dashboard: React.FC<DashboardProps> = ({ rounds, lang }) => {
       const scoreSum = metItems + (partialItems * 0.5);
 
       return {
+        id: section.id,
         name: lang === 'en' ? section.title_en.split('. ')[1] : section.title_th.split('. ')[1],
+        fullTitle: lang === 'en' ? section.title_en : section.title_th,
         compliance: totalItems > 0 ? Math.round((scoreSum / totalItems) * 100) : 0,
         met: metItems,
         partial: partialItems,
         notMet: notMetItems,
-        total: totalItems
+        total: totalItems,
+        items: Object.values(itemBreakdown)
       };
     });
 
@@ -120,10 +149,235 @@ const Dashboard: React.FC<DashboardProps> = ({ rounds, lang }) => {
     setFilterDept('all');
   };
 
+  const [showActionModal, setShowActionModal] = useState(false);
+  const actionNeededSections = stats ? stats.sectionCompliance.filter(s => s.compliance < 80) : [];
+
   const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
+
+  const TH_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+
+  const monthlyTrendData = useMemo(() => {
+    const calculateRoundCompliance = (round: TracerRound) => {
+      let totalItems = 0;
+      let scoreSum = 0;
+      
+      Object.values(round.sections).forEach(section => {
+        if (section.items) {
+          Object.values(section.items).forEach(status => {
+            if (status !== ComplianceStatus.NA) {
+              totalItems++;
+              if (status === ComplianceStatus.MET) scoreSum += 1;
+              else if (status === ComplianceStatus.PARTIALLY_MET) scoreSum += 0.5;
+            }
+          });
+        }
+      });
+      
+      return totalItems > 0 ? (scoreSum / totalItems) * 100 : 0;
+    };
+
+    const grouped: Record<string, { sum: number; count: number; year: number; monthIndex: number }> = {};
+
+    rounds.forEach(round => {
+      // Filter for 2026 onwards
+      if (round.year < 2026) return;
+
+      const monthIndex = MONTHS.en.indexOf(round.month);
+      if (monthIndex === -1) return;
+
+      const key = `${round.year}-${monthIndex}`;
+      
+      if (!grouped[key]) {
+        grouped[key] = { sum: 0, count: 0, year: round.year, monthIndex };
+      }
+      
+      grouped[key].sum += calculateRoundCompliance(round);
+      grouped[key].count += 1;
+    });
+
+    const data = Object.values(grouped).map(item => {
+      const avg = Math.round(item.sum / item.count);
+      const monthNameEn = MONTHS.en[item.monthIndex];
+      
+      const label = lang === 'en' 
+        ? `${monthNameEn.substring(0, 3)} ${item.year}` 
+        : `${TH_MONTHS_SHORT[item.monthIndex]} ${item.year + 543}`;
+
+      return {
+        month: label,
+        avg,
+        year: item.year,
+        monthIndex: item.monthIndex
+      };
+    });
+
+    return data.sort((a, b) => {
+      if (a.year !== b.year) return a.year - b.year;
+      return a.monthIndex - b.monthIndex;
+    });
+  }, [rounds, lang]);
+
+  const sectionTrendData = useMemo(() => {
+    const trendRounds = rounds.filter(r => {
+      const deptMatch = filterDept === 'all' || r.department === filterDept;
+      
+      let timeMatch = true;
+      if (filterYear === 'all') {
+         timeMatch = r.year >= 2026;
+      } else {
+         timeMatch = r.year.toString() === filterYear;
+      }
+      
+      return deptMatch && timeMatch;
+    });
+
+    const grouped: Record<string, { 
+      year: number; 
+      monthIndex: number; 
+      counts: Record<string, number>;
+      sums: Record<string, number>;
+    }> = {};
+
+    trendRounds.forEach(round => {
+       const monthIndex = MONTHS.en.indexOf(round.month);
+       if (monthIndex === -1) return;
+       const key = `${round.year}-${monthIndex}`;
+       
+       if (!grouped[key]) {
+         grouped[key] = { year: round.year, monthIndex, counts: {}, sums: {} };
+         SECTIONS_CONFIG.forEach(s => {
+           grouped[key].counts[s.id] = 0;
+           grouped[key].sums[s.id] = 0;
+         });
+       }
+
+       Object.entries(round.sections).forEach(([sectionId, sectionData]) => {
+          let total = 0;
+          let score = 0;
+          if (sectionData.items) {
+             Object.values(sectionData.items).forEach(status => {
+                if (status !== ComplianceStatus.NA) {
+                   total++;
+                   if (status === ComplianceStatus.MET) score += 1;
+                   else if (status === ComplianceStatus.PARTIALLY_MET) score += 0.5;
+                }
+             });
+          }
+          if (total > 0) {
+             const pct = (score / total) * 100;
+             grouped[key].sums[sectionId] += pct;
+             grouped[key].counts[sectionId]++;
+          }
+       });
+    });
+
+    const data = Object.values(grouped).map(item => {
+       const row: any = {
+         month: lang === 'en' 
+            ? `${MONTHS.en[item.monthIndex].substring(0, 3)} ${item.year}`
+            : `${TH_MONTHS_SHORT[item.monthIndex]} ${item.year + 543}`,
+         year: item.year,
+         monthIndex: item.monthIndex
+       };
+       
+       SECTIONS_CONFIG.forEach(s => {
+          const count = item.counts[s.id];
+          const sum = item.sums[s.id];
+          row[s.id] = count > 0 ? Math.round(sum / count) : 0;
+       });
+       
+       return row;
+    });
+
+    return data.sort((a, b) => {
+       if (a.year !== b.year) return a.year - b.year;
+       return a.monthIndex - b.monthIndex;
+    });
+  }, [rounds, filterDept, filterYear, lang]);
 
   return (
     <div className="space-y-6">
+      {showActionModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="p-6 bg-red-50 border-b border-red-100 flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-100 rounded-full text-red-600">
+                  <AlertCircle size={24} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">{lang === 'en' ? 'Action Needed Details' : 'รายละเอียดสิ่งที่ต้องดำเนินการ'}</h3>
+                  <p className="text-xs text-slate-500">{lang === 'en' ? 'Sections with compliance < 80%' : 'หมวดที่มีคะแนนความสอดคล้องต่ำกว่า 80%'}</p>
+                </div>
+              </div>
+              <button onClick={() => setShowActionModal(false)} className="p-2 hover:bg-red-100 rounded-full text-slate-400 hover:text-red-600 transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto space-y-6">
+              {actionNeededSections.length === 0 ? (
+                <div className="text-center py-12 text-slate-500">
+                  <CheckCircle size={48} className="mx-auto text-green-500 mb-4" />
+                  <p className="font-bold">{lang === 'en' ? 'No critical issues found!' : 'ไม่พบประเด็นวิกฤต!'}</p>
+                  <p className="text-sm">{lang === 'en' ? 'All sections are performing above 80% compliance.' : 'ทุกหมวดมีคะแนนความสอดคล้องสูงกว่า 80%'}</p>
+                </div>
+              ) : (
+                actionNeededSections.map(section => (
+                  <div key={section.id} className="border border-slate-200 rounded-xl overflow-hidden">
+                    <div className="bg-slate-50 p-4 border-b border-slate-100 flex justify-between items-center">
+                      <h4 className="font-bold text-slate-800">{section.fullTitle}</h4>
+                      <span className="px-3 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full">
+                        {section.compliance}% {lang === 'en' ? 'Compliance' : 'คะแนน'}
+                      </span>
+                    </div>
+                    <div className="p-4">
+                      <p className="text-xs font-bold text-slate-400 uppercase mb-3">{lang === 'en' ? 'Top Issues (Not Met / Partial)' : 'ประเด็นปัญหา (ไม่ได้ / ได้บางส่วน)'}</p>
+                      <div className="space-y-3">
+                        {section.items
+                          .filter(item => item.notMet > 0 || item.partial > 0)
+                          .sort((a, b) => (b.notMet + b.partial) - (a.notMet + a.partial))
+                          .map(item => (
+                            <div key={item.id} className="flex items-start gap-3 text-sm pb-3 border-b border-slate-50 last:border-0 last:pb-0">
+                              <span className="font-mono text-xs text-slate-400 mt-0.5">{item.id}</span>
+                              <div className="flex-1">
+                                <p className="text-slate-700 font-medium">{lang === 'en' ? item.label_en : item.label_th}</p>
+                                <div className="flex gap-4 mt-1.5">
+                                  {item.notMet > 0 && (
+                                    <span className="text-xs text-red-600 flex items-center gap-1">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                                      {item.notMet} {lang === 'en' ? 'Not Met' : 'ไม่ได้'}
+                                    </span>
+                                  )}
+                                  {item.partial > 0 && (
+                                    <span className="text-xs text-amber-600 flex items-center gap-1">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                      {item.partial} {lang === 'en' ? 'Partial' : 'บางส่วน'}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        {section.items.filter(item => item.notMet > 0 || item.partial > 0).length === 0 && (
+                          <p className="text-sm text-slate-400 italic">{lang === 'en' ? 'No specific items failed, but overall score is low.' : 'ไม่พบรายข้อที่ตกเกณฑ์ แต่คะแนนรวมต่ำ'}</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            
+            <div className="p-4 bg-slate-50 border-t flex justify-end">
+              <button onClick={() => setShowActionModal(false)} className="px-6 py-2 bg-slate-900 text-white rounded-lg font-bold text-sm hover:bg-slate-800 transition-colors">
+                {lang === 'en' ? 'Close' : 'ปิด'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-2 text-indigo-600 font-bold text-sm">
           <Filter size={18} />
@@ -207,12 +461,17 @@ const Dashboard: React.FC<DashboardProps> = ({ rounds, lang }) => {
               </div>
               <TrendingUp className="w-8 h-8 text-green-500" />
             </div>
-            <div className="bg-white p-6 rounded-xl border flex items-center justify-between shadow-sm hover:shadow-md transition-shadow">
+            <div 
+              onClick={() => setShowActionModal(true)}
+              className="bg-white p-6 rounded-xl border flex items-center justify-between shadow-sm hover:shadow-md transition-all cursor-pointer group ring-2 ring-transparent hover:ring-red-100"
+            >
               <div>
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-tight">{lang === 'en' ? 'Action Needed' : 'รายการที่ต้องจัดการ'}</p>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-tight group-hover:text-red-600 transition-colors">{lang === 'en' ? 'Action Needed' : 'รายการที่ต้องจัดการ'}</p>
                 <p className="text-3xl font-bold text-slate-900">{stats.sectionCompliance.filter(s => s.compliance < 80).length}</p>
               </div>
-              <AlertCircle className="w-8 h-8 text-red-500" />
+              <div className="p-2 bg-red-50 rounded-full group-hover:bg-red-100 transition-colors">
+                <AlertCircle className="w-8 h-8 text-red-500" />
+              </div>
             </div>
           </div>
 
@@ -273,6 +532,56 @@ const Dashboard: React.FC<DashboardProps> = ({ rounds, lang }) => {
                   </RadarChart>
                 </ResponsiveContainer>
               </div>
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-xl border shadow-sm">
+            <h3 className="text-lg font-bold mb-6 text-slate-800">{lang === 'en' ? 'Monthly Average Compliance Trend' : 'แนวโน้มความสอดคล้องเฉลี่ยรายเดือน'}</h3>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={monthlyTrendData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorAvg" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.8}/>
+                      <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="month" tick={{fontSize: 12}} />
+                  <YAxis domain={[0, 100]} tick={{fontSize: 12}} />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <Tooltip content={<CustomTooltip lang={lang} />} />
+                  <Area type="monotone" dataKey="avg" stroke="#4f46e5" fillOpacity={1} fill="url(#colorAvg)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-xl border shadow-sm">
+            <h3 className="text-lg font-bold mb-6 text-slate-800">{lang === 'en' ? 'Compliance Trend by Topic' : 'แนวโน้มความสอดคล้องรายหัวข้อ'}</h3>
+            <div className="h-[400px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={sectionTrendData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="month" tick={{fontSize: 12}} />
+                  <YAxis domain={[0, 100]} tick={{fontSize: 12}} />
+                  <Tooltip 
+                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }}
+                  />
+                  <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                  {SECTIONS_CONFIG.map((section, index) => (
+                    <Line 
+                      key={section.id}
+                      type="monotone" 
+                      dataKey={section.id} 
+                      name={lang === 'en' ? section.title_en.split('. ')[1] : section.title_th.split('. ')[1]}
+                      stroke={COLORS[index % COLORS.length]} 
+                      strokeWidth={2}
+                      dot={{ r: 3 }}
+                      activeDot={{ r: 6 }}
+                    />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
             </div>
           </div>
         </>

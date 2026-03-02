@@ -127,6 +127,40 @@ const ReportView = ({ rounds, lang }: { rounds: TracerRound[], lang: 'en' | 'th'
     setTimeout(() => setCopiedSectionId(null), 2000);
   };
 
+  const downloadReportExcel = () => {
+    if (!round) return;
+    
+    const flat: any = {
+      id: round.id,
+      year: round.year,
+      month: round.month,
+      date: round.date,
+      sourceOfData: round.sourceOfData,
+      depType: round.depType,
+      department: round.department,
+      rnLevel: round.rnLevel,
+      principalDiagnosis: round.principalDiagnosis,
+      comorbidity: round.comorbidity,
+      specialty: round.specialty,
+      patientAge: round.patientAge,
+      developmentIssues: round.developmentIssues,
+      appreciations: round.appreciations,
+      createdAt: new Date(round.createdAt).toISOString()
+    };
+
+    SECTIONS_CONFIG.forEach(sec => {
+      sec.items.forEach(item => {
+        flat[`section_${sec.id}_${item.id}`] = round.sections[sec.id as keyof TracerRound['sections']]?.items[item.id] || 'N/A';
+      });
+      flat[`section_${sec.id}_finding`] = round.sections[sec.id as keyof TracerRound['sections']]?.finding || '';
+    });
+
+    const ws = XLSX.utils.json_to_sheet([flat]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Report");
+    XLSX.writeFile(wb, `tracer-report-${round.department}-${round.date}.xlsx`);
+  };
+
   const getStatusColor = (status: ComplianceStatus) => {
     switch (status) {
       case ComplianceStatus.MET: return 'text-green-600 bg-green-50 border-green-100';
@@ -200,6 +234,12 @@ const ReportView = ({ rounds, lang }: { rounds: TracerRound[], lang: 'en' | 'th'
             className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all shadow-sm font-bold"
           >
             <Edit2 size={18} /> {lang === 'en' ? 'Edit Audit' : 'แก้ไขข้อมูล'}
+          </button>
+          <button 
+            onClick={downloadReportExcel} 
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all shadow-sm font-bold"
+          >
+            <FileSpreadsheet size={18} /> Excel
           </button>
           <button 
             onClick={() => window.print()} 
@@ -440,6 +480,7 @@ const SettingsView = ({ rounds, onUpdateRounds, lang }: { rounds: TracerRound[],
   const fileInputRef = useRef<HTMLInputElement>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
   const excelInputRef = useRef<HTMLInputElement>(null);
+  const [selectedExportDept, setSelectedExportDept] = useState<string>('all');
 
   const exportToJson = () => {
     const dataStr = JSON.stringify(rounds, null, 2);
@@ -449,6 +490,61 @@ const SettingsView = ({ rounds, onUpdateRounds, lang }: { rounds: TracerRound[],
     linkElement.setAttribute('href', dataUri);
     linkElement.setAttribute('download', exportFileDefaultName);
     linkElement.click();
+  };
+
+  const exportToExcel = () => {
+    const roundsToExport = selectedExportDept === 'all' 
+      ? [...rounds] 
+      : rounds.filter(r => r.department === selectedExportDept);
+
+    // Sort by date (newest first) then department
+    roundsToExport.sort((a, b) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      if (dateA !== dateB) return dateB - dateA;
+      return a.department.localeCompare(b.department);
+    });
+
+    if (roundsToExport.length === 0) {
+      alert(lang === 'en' ? "No data to export for the selected filter." : "ไม่มีข้อมูลสำหรับส่งออกตามตัวกรองที่เลือก");
+      return;
+    }
+
+    const data = roundsToExport.map(round => {
+      const flat: any = {
+        id: round.id,
+        year: round.year,
+        month: round.month,
+        date: round.date,
+        sourceOfData: round.sourceOfData,
+        depType: round.depType,
+        department: round.department,
+        rnLevel: round.rnLevel,
+        principalDiagnosis: round.principalDiagnosis,
+        comorbidity: round.comorbidity,
+        specialty: round.specialty,
+        patientAge: round.patientAge,
+        developmentIssues: round.developmentIssues,
+        appreciations: round.appreciations,
+        createdAt: new Date(round.createdAt).toISOString()
+      };
+
+      SECTIONS_CONFIG.forEach(sec => {
+        sec.items.forEach(item => {
+          flat[`section_${sec.id}_${item.id}`] = round.sections[sec.id as keyof TracerRound['sections']]?.items[item.id] || 'N/A';
+        });
+        flat[`section_${sec.id}_finding`] = round.sections[sec.id as keyof TracerRound['sections']]?.finding || '';
+      });
+      return flat;
+    });
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Tracer Rounds");
+    const fileName = selectedExportDept === 'all' 
+      ? `nursing-tracer-export-all-${new Date().toISOString().split('T')[0]}.xlsx`
+      : `nursing-tracer-export-${selectedExportDept.replace(/\s+/g, '_')}-${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(wb, fileName);
   };
 
   const exportToCSV = () => {
@@ -747,7 +843,32 @@ const SettingsView = ({ rounds, onUpdateRounds, lang }: { rounds: TracerRound[],
             </div>
             <h3 className="text-lg font-bold text-slate-900">{lang === 'en' ? 'Export Data' : 'ส่งออกข้อมูล'}</h3>
           </div>
+          
+          <div className="mb-4">
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{lang === 'en' ? 'Filter by Department' : 'กรองตามแผนก'}</label>
+            <select 
+              value={selectedExportDept} 
+              onChange={(e) => setSelectedExportDept(e.target.value)}
+              className="w-full p-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50"
+            >
+              <option value="all">{lang === 'en' ? 'All Departments' : 'ทุกแผนก'}</option>
+              {DEPARTMENTS.map(d => (
+                <option key={d.name} value={d.name}>{lang === 'en' ? d.name : d.name_th}</option>
+              ))}
+            </select>
+          </div>
+
           <div className="space-y-3">
+            <button onClick={exportToExcel} className="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl transition-all group">
+              <div className="flex items-center gap-3">
+                <FileSpreadsheet className="text-green-600" />
+                <div className="text-left">
+                  <p className="font-bold text-slate-900 text-sm">Export to Excel (.xlsx)</p>
+                  <p className="text-xs text-slate-500">Professional spreadsheet format</p>
+                </div>
+              </div>
+              <ChevronRight size={18} />
+            </button>
             <button onClick={exportToJson} className="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl transition-all group">
               <div className="flex items-center gap-3">
                 <FileJson className="text-indigo-600" />
@@ -978,14 +1099,14 @@ const AppContent = () => {
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      const bstr = event.target?.result;
-      const wb = XLSX.read(bstr, { type: 'binary' });
+      const data = event.target?.result;
+      const wb = XLSX.read(data, { type: 'array' });
       const wsname = wb.SheetNames[0];
       const ws = wb.Sheets[wsname];
-      const data: any[] = XLSX.utils.sheet_to_json(ws);
+      const jsonData: any[] = XLSX.utils.sheet_to_json(ws);
       
       const newRounds: TracerRound[] = [];
-      data.forEach((row: any) => {
+      jsonData.forEach((row: any) => {
         const entry: any = { sections: {} };
         const fieldMapping: Record<string, string> = {
           'Source_of_data': 'sourceOfData',
@@ -1056,7 +1177,7 @@ const AppContent = () => {
         }
       }
     };
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
     if (globalExcelInputRef.current) globalExcelInputRef.current.value = "";
   };
 

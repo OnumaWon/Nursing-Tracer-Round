@@ -26,8 +26,8 @@ const TracerForm: React.FC<TracerFormProps> = ({ onSubmit, lang, initialData, is
     month: MONTHS.en[new Date().getMonth()],
     date: new Date().toISOString().split('T')[0],
     sourceOfData: SOURCE_OF_DATA_OPTIONS.en[0],
-    depType: DEPARTMENTS[0].type,
-    department: DEPARTMENTS[0].name,
+    depType: '',
+    department: '',
     rnLevel: RN_LEVELS[0],
     principalDiagnosis: '',
     comorbidity: '',
@@ -76,7 +76,7 @@ const TracerForm: React.FC<TracerFormProps> = ({ onSubmit, lang, initialData, is
       setFormData(prev => ({ 
         ...prev, 
         department: selectedDept ? selectedDept.name : value,
-        depType: selectedDept ? selectedDept.type : prev.depType
+        depType: selectedDept ? selectedDept.type : ''
       }));
     } else {
       setFormData(prev => ({ 
@@ -141,6 +141,7 @@ const TracerForm: React.FC<TracerFormProps> = ({ onSubmit, lang, initialData, is
         <div>
           <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">{UI_LABELS[lang].department}</label>
           <select name="department" value={formData.department} onChange={handleBasicInfoChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2.5 bg-white border">
+            <option value="">{lang === 'en' ? 'Select Department' : 'เลือกแผนก'}</option>
             {DEPARTMENTS.map(d => <option key={d.name} value={d.name}>{lang === 'en' ? d.name : d.name_th}</option>)}
           </select>
         </div>

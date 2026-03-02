@@ -3,7 +3,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { 
   chatWithAssistant, 
   analyzeRounds, 
-  speakText 
+  speakText,
+  translateText
 } from '../services/geminiService';
 import { TracerRound, ChatMessage } from '../types';
 import { 
@@ -15,7 +16,8 @@ import {
   Loader2,
   BrainCircuit,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Languages
 } from 'lucide-react';
 
 interface AssistantProps {
@@ -24,17 +26,31 @@ interface AssistantProps {
 }
 
 const Assistant: React.FC<AssistantProps> = ({ rounds, lang }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    const saved = localStorage.getItem('assistant_chat_history');
+    return saved ? JSON.parse(saved) : [];
+  });
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<string | null>(null);
+  const [translatedAnalysis, setTranslatedAnalysis] = useState<string | null>(null);
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [showThai, setShowThai] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    localStorage.setItem('assistant_chat_history', JSON.stringify(messages));
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, isLoading]);
+
+  const handleClearHistory = () => {
+    if (confirm(lang === 'en' ? 'Clear chat history?' : 'ล้างประวัติการสนทนา?')) {
+      setMessages([]);
+      localStorage.removeItem('assistant_chat_history');
+    }
+  };
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
@@ -55,6 +71,9 @@ const Assistant: React.FC<AssistantProps> = ({ rounds, lang }) => {
   const handleAnalyze = async () => {
     if (rounds.length === 0 || isAnalyzing) return;
     setIsAnalyzing(true);
+    setAnalysis(null);
+    setTranslatedAnalysis(null);
+    setShowThai(false);
     try {
       const result = await analyzeRounds(rounds);
       setAnalysis(result);
@@ -65,25 +84,68 @@ const Assistant: React.FC<AssistantProps> = ({ rounds, lang }) => {
     }
   };
 
+  const handleTranslate = async () => {
+    if (!analysis || isTranslating) return;
+    
+    if (showThai) {
+      setShowThai(false);
+      return;
+    }
+
+    if (translatedAnalysis) {
+      setShowThai(true);
+      return;
+    }
+
+    setIsTranslating(true);
+    try {
+      const result = await translateText(analysis, 'th');
+      setTranslatedAnalysis(result);
+      setShowThai(true);
+    } catch (error) {
+      console.error("Translation error:", error);
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+
   return (
     <div className={`grid grid-cols-1 ${isExpanded ? '' : 'lg:grid-cols-3'} gap-6`}>
       <div className={`${isExpanded ? 'hidden' : 'lg:col-span-1'} bg-white rounded-xl shadow-lg border border-indigo-100 flex flex-col h-[600px]`}>
         <div className="p-4 bg-indigo-600 rounded-t-xl text-white flex justify-between items-center">
           <h3 className="font-bold flex items-center gap-2"><BrainCircuit size={18} /> {lang === 'en' ? 'Deep Insights' : 'ข้อมูลเชิงลึก'}</h3>
-          <button onClick={handleAnalyze} disabled={isAnalyzing || rounds.length === 0} className="bg-indigo-500 p-1 rounded">
-            {isAnalyzing ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={handleTranslate} 
+              disabled={!analysis || isAnalyzing || isTranslating} 
+              className={`p-1.5 rounded transition-colors ${showThai ? 'bg-white text-indigo-600' : 'bg-indigo-500 hover:bg-indigo-400 text-white'}`}
+              title={lang === 'en' ? 'Translate to Thai' : 'แปลเป็นไทย'}
+            >
+              {isTranslating ? <Loader2 size={16} className="animate-spin" /> : <Languages size={16} />}
+            </button>
+            <button onClick={handleAnalyze} disabled={isAnalyzing || rounds.length === 0} className="bg-indigo-500 hover:bg-indigo-400 p-1.5 rounded transition-colors">
+              {isAnalyzing ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+            </button>
+          </div>
         </div>
         <div className="p-4 flex-1 overflow-y-auto bg-indigo-50/30">
-          {analysis ? <div className="whitespace-pre-wrap text-sm text-slate-700">{analysis}</div> : 
-          <div className="text-center text-slate-400 p-10 text-xs">{lang === 'en' ? 'Click spark icon for analysis.' : 'คลิกไอคอนประกายไฟเพื่อเริ่มวิเคราะห์'}</div>}
+          {analysis ? (
+            <div className="whitespace-pre-wrap text-sm text-slate-700 leading-relaxed">
+              {showThai ? translatedAnalysis : analysis}
+            </div>
+          ) : (
+            <div className="text-center text-slate-400 p-10 text-xs">{lang === 'en' ? 'Click spark icon for analysis.' : 'คลิกไอคอนประกายไฟเพื่อเริ่มวิเคราะห์'}</div>
+          )}
         </div>
       </div>
 
       <div className={`${isExpanded ? '' : 'lg:col-span-2'} bg-white rounded-xl shadow-lg border border-indigo-100 flex flex-col h-[600px]`}>
         <div className="p-4 bg-slate-800 rounded-t-xl text-white flex justify-between items-center">
           <div className="flex items-center gap-2"><Bot size={20} /><h3 className="font-bold">{lang === 'en' ? 'Assistant' : 'ผู้ช่วยอัจฉริยะ'}</h3></div>
-          <button onClick={() => setIsExpanded(!isExpanded)}>{isExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}</button>
+          <div className="flex items-center gap-2">
+            <button onClick={handleClearHistory} className="text-xs text-slate-400 hover:text-white underline">{lang === 'en' ? 'Clear' : 'ล้าง'}</button>
+            <button onClick={() => setIsExpanded(!isExpanded)}>{isExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}</button>
+          </div>
         </div>
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
           {messages.map((m, i) => (
