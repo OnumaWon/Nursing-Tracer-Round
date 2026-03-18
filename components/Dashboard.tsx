@@ -490,7 +490,7 @@ const Dashboard: React.FC<DashboardProps> = ({ rounds, lang }) => {
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={stats.sectionCompliance} layout="vertical" margin={{ left: 20, right: 30, top: 10, bottom: 20 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
-                    <YAxis dataKey="name" type="category" width={120} tick={{fontSize: 10, fontWeight: 500, fill: '#64748b'}} />
+                    <YAxis dataKey="name" type="category" width={140} tick={{fontSize: 12, fontWeight: 600, fill: '#334155'}} />
                     <XAxis type="number" domain={[0, 100]} hide />
                     <Tooltip 
                       cursor={{fill: 'transparent'}}
@@ -500,7 +500,7 @@ const Dashboard: React.FC<DashboardProps> = ({ rounds, lang }) => {
                       {stats.sectionCompliance.map((e, i) => (
                         <Cell key={i} fill={COLORS[i % COLORS.length]} fillOpacity={0.8} />
                       ))}
-                      <LabelList dataKey="compliance" position="right" formatter={(val: number) => `${val}%`} style={{ fontSize: '10px', fontWeight: 'bold', fill: '#4f46e5' }} />
+                      <LabelList dataKey="compliance" position="right" formatter={(val: number) => `${val}%`} style={{ fontSize: '12px', fontWeight: 'bold', fill: '#4f46e5' }} />
                     </Bar>
                     <Brush dataKey="name" height={30} stroke="#4f46e5" y={410} startIndex={0} endIndex={6} fill="#f8fafc" />
                   </BarChart>
@@ -514,8 +514,8 @@ const Dashboard: React.FC<DashboardProps> = ({ rounds, lang }) => {
                 <ResponsiveContainer width="100%" height="100%">
                   <RadarChart data={stats.sectionCompliance} outerRadius="80%">
                     <PolarGrid stroke="#e2e8f0" />
-                    <PolarAngleAxis dataKey="name" tick={{fontSize: 9, fill: '#94a3b8', fontWeight: 600}} />
-                    <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{fontSize: 8}} />
+                    <PolarAngleAxis dataKey="name" tick={{fontSize: 11, fill: '#334155', fontWeight: 600}} />
+                    <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{fontSize: 10, fill: '#64748b'}} />
                     <Radar 
                       name="Score" 
                       dataKey="compliance" 
@@ -525,7 +525,7 @@ const Dashboard: React.FC<DashboardProps> = ({ rounds, lang }) => {
                       fillOpacity={0.2} 
                       activeDot={{ r: 6, fill: '#4f46e5', stroke: '#fff', strokeWidth: 2 }}
                     >
-                      <LabelList dataKey="compliance" position="top" formatter={(val: number) => `${val}%`} style={{ fontSize: '8px', fontWeight: 'bold' }} />
+                      <LabelList dataKey="compliance" position="top" formatter={(val: number) => `${val}%`} style={{ fontSize: '11px', fontWeight: 'bold', fill: '#1e293b' }} />
                     </Radar>
                     <Tooltip content={<CustomTooltip lang={lang} />} />
                     <Legend />
@@ -546,8 +546,8 @@ const Dashboard: React.FC<DashboardProps> = ({ rounds, lang }) => {
                       <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
                     </linearGradient>
                   </defs>
-                  <XAxis dataKey="month" tick={{fontSize: 12}} />
-                  <YAxis domain={[0, 100]} tick={{fontSize: 12}} />
+                  <XAxis dataKey="month" tick={{fontSize: 12, fill: '#475569'}} />
+                  <YAxis domain={[0, 100]} tick={{fontSize: 12, fill: '#475569'}} />
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <Tooltip content={<CustomTooltip lang={lang} />} />
                   <Area type="monotone" dataKey="avg" stroke="#4f46e5" fillOpacity={1} fill="url(#colorAvg)" />
@@ -562,8 +562,8 @@ const Dashboard: React.FC<DashboardProps> = ({ rounds, lang }) => {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={sectionTrendData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="month" tick={{fontSize: 12}} />
-                  <YAxis domain={[0, 100]} tick={{fontSize: 12}} />
+                  <XAxis dataKey="month" tick={{fontSize: 12, fill: '#475569'}} />
+                  <YAxis domain={[0, 100]} tick={{fontSize: 12, fill: '#475569'}} />
                   <Tooltip 
                     contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }}
                   />
