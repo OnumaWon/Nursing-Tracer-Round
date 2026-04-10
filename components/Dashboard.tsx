@@ -71,16 +71,55 @@ const Dashboard: React.FC<DashboardProps> = ({ rounds, lang }) => {
   const [filterMonth, setFilterMonth] = useState<string>('all');
   const [filterDept, setFilterDept] = useState<string>('all');
 
+  const getNormalizedYear = (year: number) => {
+    if (year > 2500) return year - 543;
+    return year;
+  };
+
   const filterOptions = useMemo(() => {
-    const years = Array.from(new Set(rounds.map(r => r.year.toString()))).sort((a: string, b: string) => b.localeCompare(a));
+    const years = Array.from(new Set(rounds.map(r => getNormalizedYear(r.year).toString()))).sort((a: string, b: string) => b.localeCompare(a));
     const depts = Array.from(new Set(rounds.map(r => r.department))).sort();
     return { years, depts };
   }, [rounds]);
 
+  const getMonthIndex = (monthStr: string) => {
+    if (!monthStr) return -1;
+    const cleanStr = monthStr.trim();
+    
+    const enIdx = MONTHS.en.findIndex(m => m.toLowerCase() === cleanStr.toLowerCase());
+    if (enIdx !== -1) return enIdx;
+    
+    const thIdx = MONTHS.th.findIndex(m => m === cleanStr);
+    if (thIdx !== -1) return thIdx;
+
+    // Try matching short English names (e.g., "Mar")
+    if (cleanStr.length >= 3) {
+      const shortEnIdx = MONTHS.en.findIndex(m => m.toLowerCase().startsWith(cleanStr.toLowerCase().substring(0, 3)));
+      if (shortEnIdx !== -1) return shortEnIdx;
+    }
+
+    // Try parsing as number (e.g., "03" -> 2)
+    const num = parseInt(cleanStr, 10);
+    if (!isNaN(num) && num >= 1 && num <= 12) {
+      return num - 1;
+    }
+    
+    return -1;
+  };
+
   const filteredRounds = useMemo(() => {
     return rounds.filter(round => {
-      const yearMatch = filterYear === 'all' || round.year.toString() === filterYear;
-      const monthMatch = filterMonth === 'all' || round.month === filterMonth;
+      const normYear = getNormalizedYear(round.year);
+      const yearMatch = filterYear === 'all' || normYear.toString() === filterYear;
+      
+      let monthMatch = filterMonth === 'all';
+      if (!monthMatch) {
+         const dateObj = new Date(round.date);
+         const roundMonthIdx = dateObj.getMonth();
+         const filterMonthIdx = getMonthIndex(filterMonth);
+         monthMatch = roundMonthIdx === filterMonthIdx;
+      }
+
       const deptMatch = filterDept === 'all' || round.department === filterDept;
       return yearMatch && monthMatch && deptMatch;
     });
@@ -179,16 +218,17 @@ const Dashboard: React.FC<DashboardProps> = ({ rounds, lang }) => {
     const grouped: Record<string, { sum: number; count: number; year: number; monthIndex: number }> = {};
 
     rounds.forEach(round => {
+      const normYear = getNormalizedYear(round.year);
       // Filter for 2026 onwards
-      if (round.year < 2026) return;
+      if (normYear < 2026) return;
 
-      const monthIndex = MONTHS.en.indexOf(round.month);
-      if (monthIndex === -1) return;
+      const dateObj = new Date(round.date);
+      const monthIndex = dateObj.getMonth();
 
-      const key = `${round.year}-${monthIndex}`;
+      const key = `${normYear}-${monthIndex}`;
       
       if (!grouped[key]) {
-        grouped[key] = { sum: 0, count: 0, year: round.year, monthIndex };
+        grouped[key] = { sum: 0, count: 0, year: normYear, monthIndex };
       }
       
       grouped[key].sum += calculateRoundCompliance(round);
@@ -220,12 +260,13 @@ const Dashboard: React.FC<DashboardProps> = ({ rounds, lang }) => {
   const sectionTrendData = useMemo(() => {
     const trendRounds = rounds.filter(r => {
       const deptMatch = filterDept === 'all' || r.department === filterDept;
+      const normYear = getNormalizedYear(r.year);
       
       let timeMatch = true;
       if (filterYear === 'all') {
-         timeMatch = r.year >= 2026;
+         timeMatch = normYear >= 2026;
       } else {
-         timeMatch = r.year.toString() === filterYear;
+         timeMatch = normYear.toString() === filterYear;
       }
       
       return deptMatch && timeMatch;
@@ -239,12 +280,13 @@ const Dashboard: React.FC<DashboardProps> = ({ rounds, lang }) => {
     }> = {};
 
     trendRounds.forEach(round => {
-       const monthIndex = MONTHS.en.indexOf(round.month);
-       if (monthIndex === -1) return;
-       const key = `${round.year}-${monthIndex}`;
+       const normYear = getNormalizedYear(round.year);
+       const dateObj = new Date(round.date);
+       const monthIndex = dateObj.getMonth();
+       const key = `${normYear}-${monthIndex}`;
        
        if (!grouped[key]) {
-         grouped[key] = { year: round.year, monthIndex, counts: {}, sums: {} };
+         grouped[key] = { year: normYear, monthIndex, counts: {}, sums: {} };
          SECTIONS_CONFIG.forEach(s => {
            grouped[key].counts[s.id] = 0;
            grouped[key].sums[s.id] = 0;
@@ -378,8 +420,9 @@ const Dashboard: React.FC<DashboardProps> = ({ rounds, lang }) => {
         </div>
       )}
 
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center gap-4">
-        <div className="flex items-center gap-2 text-indigo-600 font-bold text-sm">
+      <div className="space-y-6">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2 text-indigo-600 font-bold text-sm">
           <Filter size={18} />
           <span>{lang === 'en' ? 'Filters' : 'ตัวกรอง'}</span>
         </div>
@@ -430,6 +473,38 @@ const Dashboard: React.FC<DashboardProps> = ({ rounds, lang }) => {
         </div>
       </div>
 
+      {stats && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-white p-6 rounded-xl border flex items-center justify-between shadow-sm hover:shadow-md transition-shadow">
+            <div>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-tight">{lang === 'en' ? 'Total Rounds' : 'จำนวนรอบตรวจ'}</p>
+              <p className="text-3xl font-bold text-slate-900">{filteredRounds.length}</p>
+            </div>
+            <CheckCircle className="w-8 h-8 text-indigo-500" />
+          </div>
+          <div className="bg-white p-6 rounded-xl border flex items-center justify-between shadow-sm hover:shadow-md transition-shadow">
+            <div>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-tight">{lang === 'en' ? 'Avg Compliance' : 'ความสอดคล้องเฉลี่ย'}</p>
+              <p className="text-3xl font-bold text-slate-900">{stats.overallCompliance}%</p>
+            </div>
+            <TrendingUp className="w-8 h-8 text-green-500" />
+          </div>
+          <div 
+            onClick={() => setShowActionModal(true)}
+            className="bg-white p-6 rounded-xl border flex items-center justify-between shadow-sm hover:shadow-md transition-all cursor-pointer group ring-2 ring-transparent hover:ring-red-100"
+          >
+            <div>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-tight group-hover:text-red-600 transition-colors">{lang === 'en' ? 'Action Needed' : 'รายการที่ต้องจัดการ'}</p>
+              <p className="text-3xl font-bold text-slate-900">{stats.sectionCompliance.filter(s => s.compliance < 80).length}</p>
+            </div>
+            <div className="p-2 bg-red-50 rounded-full group-hover:bg-red-100 transition-colors">
+              <AlertCircle className="w-8 h-8 text-red-500" />
+            </div>
+          </div>
+        </div>
+      )}
+      </div>
+
       {!stats ? (
         <div className="flex flex-col items-center justify-center py-20 bg-white rounded-2xl border border-dashed border-slate-300">
           <Search className="w-12 h-12 text-slate-300 mb-4" />
@@ -446,35 +521,6 @@ const Dashboard: React.FC<DashboardProps> = ({ rounds, lang }) => {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-white p-6 rounded-xl border flex items-center justify-between shadow-sm hover:shadow-md transition-shadow">
-              <div>
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-tight">{lang === 'en' ? 'Total Rounds' : 'จำนวนรอบตรวจ'}</p>
-                <p className="text-3xl font-bold text-slate-900">{filteredRounds.length}</p>
-              </div>
-              <CheckCircle className="w-8 h-8 text-indigo-500" />
-            </div>
-            <div className="bg-white p-6 rounded-xl border flex items-center justify-between shadow-sm hover:shadow-md transition-shadow">
-              <div>
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-tight">{lang === 'en' ? 'Avg Compliance' : 'ความสอดคล้องเฉลี่ย'}</p>
-                <p className="text-3xl font-bold text-slate-900">{stats.overallCompliance}%</p>
-              </div>
-              <TrendingUp className="w-8 h-8 text-green-500" />
-            </div>
-            <div 
-              onClick={() => setShowActionModal(true)}
-              className="bg-white p-6 rounded-xl border flex items-center justify-between shadow-sm hover:shadow-md transition-all cursor-pointer group ring-2 ring-transparent hover:ring-red-100"
-            >
-              <div>
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-tight group-hover:text-red-600 transition-colors">{lang === 'en' ? 'Action Needed' : 'รายการที่ต้องจัดการ'}</p>
-                <p className="text-3xl font-bold text-slate-900">{stats.sectionCompliance.filter(s => s.compliance < 80).length}</p>
-              </div>
-              <div className="p-2 bg-red-50 rounded-full group-hover:bg-red-100 transition-colors">
-                <AlertCircle className="w-8 h-8 text-red-500" />
-              </div>
-            </div>
-          </div>
-
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pb-8">
             <div className="bg-white p-6 rounded-xl border shadow-sm">
               <div className="flex items-center justify-between mb-6">

@@ -94,16 +94,22 @@ const DepartmentTracking: React.FC<DepartmentTrackingProps> = ({ rounds, lang })
       const scoreSum = metItems + (partialItems * 0.5);
       const compliance = totalItems > 0 ? Math.round((scoreSum / totalItems) * 100) : 0;
 
+      // Extract month from date string (YYYY-MM-DD) to ensure it matches the selected date
+      const dateObj = new Date(round.date);
+      const monthIndex = dateObj.getMonth();
+      const displayMonth = lang === 'en' ? MONTHS.en[monthIndex] : MONTHS.th[monthIndex];
+      const shortMonthEn = MONTHS.en[monthIndex].substring(0, 3);
+
       return {
-        label: `${round.date.split('-')[2]}/${round.month.substring(0,3)}`,
-        fullDate: `${round.date} (${round.month})`,
+        label: `${round.date.split('-')[2]}/${shortMonthEn}`,
+        fullDate: `${round.date} (${displayMonth})`,
         compliance,
         index: index + 1,
         id: round.id,
         year: round.year
       };
     });
-  }, [deptRounds]);
+  }, [deptRounds, lang]);
 
   const trend = useMemo(() => {
     if (trackingData.length < 2) return null;
