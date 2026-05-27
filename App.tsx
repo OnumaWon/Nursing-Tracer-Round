@@ -50,6 +50,7 @@ import Assistant from './components/Assistant';
 import DepartmentTracking from './components/DepartmentTracking';
 import { TracerRound, ComplianceStatus, SectionData } from './types';
 import { SECTIONS_CONFIG, UI_LABELS, DEPARTMENTS } from './constants';
+import { BACKUP_DATA } from './backupData';
 import { analyzeSingleRound, analyzeSection } from './services/geminiService';
 
 const SidebarLink = ({ to, icon: Icon, label, active }: { to: string, icon: any, label: string, active: boolean }) => (
@@ -1060,8 +1061,29 @@ const AppContent = () => {
   const globalExcelInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const saved = localStorage.getItem('nursing_tracer_rounds');
-    if (saved) setRounds(JSON.parse(saved));
+    const saved = localStorage.getItem('nursing_tracer_rounds') || localStorage.getItem('tracerRounds');
+    let loadedRounds: TracerRound[] = [];
+    if (saved) {
+      try {
+        loadedRounds = JSON.parse(saved);
+      } catch (e) {
+        loadedRounds = [];
+      }
+    }
+    
+    const loadedIds = new Set(loadedRounds.map(r => r.id));
+    const newBackupRounds = BACKUP_DATA.filter(b => !loadedIds.has(b.id));
+
+    if (newBackupRounds.length > 0) {
+      const merged = [...loadedRounds, ...newBackupRounds];
+      merged.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      setRounds(merged);
+      localStorage.setItem('nursing_tracer_rounds', JSON.stringify(merged));
+      localStorage.setItem('tracerRounds', JSON.stringify(merged));
+    } else {
+      setRounds(loadedRounds);
+    }
+
     const savedLang = localStorage.getItem('nursing_tracer_lang');
     if (savedLang === 'th' || savedLang === 'en') setLang(savedLang);
   }, []);
